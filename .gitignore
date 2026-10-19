@@ -1,24 +1,14 @@
-# ===================================
-# my-deepseek-agent specific
-# ===================================
-# Сессия DeepSeek и данные моста (важно! не выкладывать)
-bridge/session/
-bridge/session/*
-session/
-session/*
+# Данные DSH (сессии, токены, конфиги)
 data/
+.dsh/
+dsh-home/
 
-# Локальные конфиги (есть примеры)
+# Рабочая директория (если не хотите коммитить результаты работы агента)
 workspace/
-workspace/.opencode/
-configs/git-config/.git-credentials
-configs/git-config/.gitconfig
-configs/agent/deepseek.md
-.env
 
-# Проект
-workspace/CCPS/
-workspace/CCPS/*
+# Логи и временные файлы
+*.log
+.env
 
 # ===================================
 # OS

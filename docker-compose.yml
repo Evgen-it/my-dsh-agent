@@ -1,16 +1,23 @@
 services:
   deepseek-harness:
-    image: ghcr.io/misaka-link/deepseek-harness-docker:latest
+    build: .
+    image: deepseek-harness:0.2.1-rc.2-r1
     container_name: deepseek-harness
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3080:3080"        # только localhost, как мы делали с VNC
+      # Публикуем ТОЛЬКО на loopback. Порты соответствуют runzhliu:
+      # 3080 — Web UI, 6080 — noVNC (если нужен).
+      - "127.0.0.1:3080:3079"
+      - "127.0.0.1:6080:6080"
     environment:
-      - AUTH_TOKEN=${DSH_AUTH_TOKEN:-admin}
-      - PROXY_PORT=3080
-      - DSH_DESKTOP_ENABLED=1         # noVNC-десктоп для отладки (можно выключить)
+      # Токен доступа к Web UI генерируется автоматически и печатается в логах.
+      # Смотрите `docker compose logs dsh | grep 'dsh web:'`
+      - TZ=Europe/Moscow
     volumes:
-      - ./data/dsh:/root/.dsh
+      # Постоянный том для всех данных DSH: профили, плагины, сессии, настройки.
+      - dsh-home:/home/node/.dsh
+      # Рабочая директория на хосте (опционально, но удобно для доступа к файлам)
       - ./workspace:/workspace
-      - ./data/snapshots:/root/.dsh-snapshots
-      - ./data/browser:/root/.config/chromium
+
+volumes:
+  dsh-home:
