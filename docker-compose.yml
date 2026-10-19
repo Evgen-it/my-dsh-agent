@@ -1,0 +1,16 @@
+services:
+  deepseek-harness:
+    image: ghcr.io/misaka-link/deepseek-harness-docker:latest
+    container_name: deepseek-harness
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3080:3080"        # только localhost, как мы делали с VNC
+    environment:
+      - AUTH_TOKEN=${DSH_AUTH_TOKEN:-admin}
+      - PROXY_PORT=3080
+      - DSH_DESKTOP_ENABLED=1         # noVNC-десктоп для отладки (можно выключить)
+    volumes:
+      - ./data/dsh:/root/.dsh
+      - ./workspace:/workspace
+      - ./data/snapshots:/root/.dsh-snapshots
+      - ./data/browser:/root/.config/chromium

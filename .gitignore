@@ -1,0 +1,38 @@
+# ===================================
+# my-deepseek-agent specific
+# ===================================
+# Сессия DeepSeek и данные моста (важно! не выкладывать)
+bridge/session/
+bridge/session/*
+session/
+session/*
+data/
+
+# Локальные конфиги (есть примеры)
+workspace/
+workspace/.opencode/
+configs/git-config/.git-credentials
+configs/git-config/.gitconfig
+configs/agent/deepseek.md
+.env
+
+# Проект
+workspace/CCPS/
+workspace/CCPS/*
+
+# ===================================
+# OS
+# ===================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
