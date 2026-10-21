@@ -2,7 +2,7 @@
 # dsh.sh — утилита управления локальным стеком DSH
 
 set -e
-CONTAINER="deepseek-harness"
+CONTAINER="dsh"
 URL_PATTERN='http://127\.0\.0\.1:[0-9]+/\?token=[A-Za-z0-9_-]+'
 
 get_url() {
@@ -25,7 +25,7 @@ case "${1:-up}" in
     up)
         docker compose up -d
         echo -n "Ожидание старта DSH"
-        for i in {1..30}; do
+        for i in {1..60}; do
             URL=$(get_url)
             if [ -n "$URL" ]; then
                 echo ""
@@ -37,7 +37,7 @@ case "${1:-up}" in
             sleep 1
         done
         echo ""
-        echo "✗ Не дождались за 30 сек. Логи: docker compose logs $CONTAINER" >&2
+        echo "✗ Не дождались за 60 сек. Логи: docker compose logs $CONTAINER" >&2
         exit 1
         ;;
     rebuild)

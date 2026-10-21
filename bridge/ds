@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Launch the terminal DeepSeek chat with the project virtualenv.
+#   ./ds                 resume the last conversation
+#   ./ds --new           fresh conversation
+#   ./ds --model expert  stronger, slower model
+#   ./ds --think --search
+set -euo pipefail
+cd "$(dirname "$0")"
+
+PY=venv/bin/python
+if [ ! -x "$PY" ]; then
+  echo "No virtualenv here. Create it with:"
+  echo "  /opt/homebrew/bin/python3.12 -m venv venv"
+  echo "  ./venv/bin/pip install -r requirements.txt"
+  echo "  ./venv/bin/python -m playwright install chromium"
+  exit 1
+fi
+
+exec "$PY" chat.py "$@"

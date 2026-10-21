@@ -1,8 +1,8 @@
 services:
-  deepseek-harness:
+  dsh:
     build: .
     image: deepseek-harness:0.2.1-rc.2-r1
-    container_name: deepseek-harness
+    container_name: dsh
     restart: unless-stopped
     ports:
       # Публикуем ТОЛЬКО на loopback. Порты соответствуют runzhliu:
@@ -18,6 +18,55 @@ services:
       - dsh-home:/home/node/.dsh
       # Рабочая директория на хосте (опционально, но удобно для доступа к файлам)
       - ./workspace:/workspace
+      - bridge-session:/bridge-session:ro   # ← только чтение
+    networks:
+      - dsh-net
+
+  bridge:
+    build:
+      context: ./bridge
+      dockerfile: Dockerfile
+    container_name: bridge
+    profiles: ["bridge"]          # запускается с --profile bridge
+    ports:
+      - "127.0.0.1:8000:8000"     # только для отладки
+    volumes:
+      - bridge-session:/app/session
+      - ./bridge/.env:/app/.env:ro
+      - dsh-home:/dsh-home
+    environment:
+      - TZ=Europe/Moscow
+      - DSH_HOME=/dsh-home
+    networks:
+      - dsh-net
+    restart: unless-stopped
+
+  dsh-bridge-auth:
+    build:
+      context: ./bridge
+      dockerfile: Dockerfile.auth
+    container_name: dsh-bridge-auth
+    profiles: ["auth"]            # запускается только когда нужен вход
+    ports:
+      - "127.0.0.1:6081:6080"     # VNC
+    volumes:
+      - bridge-session:/app/session
+      - ./bridge/.env:/app/.env:ro
+    environment:
+      - DISPLAY=:99
+      - RESOLUTION=1280x800x24
+      - VNC_PASSWORD=password
+      - PYTHONUNBUFFERED=1  # <-- логи в реальном времени
+    networks:
+      - dsh-net
+    tty: false
+    stdin_open: false
+    # После завершения скрипта контейнер просто останавливается (exit 0)
+
+networks:
+  dsh-net:
+    driver: bridge
 
 volumes:
   dsh-home:
+  bridge-session:
