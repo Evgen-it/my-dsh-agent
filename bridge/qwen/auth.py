@@ -28,7 +28,6 @@ _PROFILE_LOCK = threading.RLock()
 
 
 def _sync_session_directory(path: Path) -> None:
-    """Persist the atomic rename before a rotated cookie can be used."""
     if os.name != "nt":
         directory = os.open(Path(path).parent, os.O_RDONLY)
         try:
@@ -39,7 +38,6 @@ def _sync_session_directory(path: Path) -> None:
 
 @contextmanager
 def _session_write_lock(path: Path):
-    """Serialize auth CLI and request-time writers around atomic replacement."""
     path = Path(path)
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     path.parent.chmod(0o700)
@@ -88,10 +86,9 @@ class Session(BrowserSession):
 
     def save_if_current(self, expected: "Session", path: Path = DEFAULT_SESSION_FILE,
                         check=None) -> bool:
-        """Do not replace a manual sign-in that changed during HTTP renewal."""
         with _session_write_lock(path):
             if check is not None:
-                check()  # Waiting for a writer can outlive request ownership.
+                check()
             if self.load(path) != expected:
                 return False
             super().save(path)
@@ -117,7 +114,6 @@ _READ_SESSION_JS = """() => {
 
 
 def _capture(context, page) -> Optional[Session]:
-    # Never inspect storage on an OAuth provider or a redirected third-party page.
     if urlparse(page.url).hostname != "chat.qwen.ai":
         return None
     try:
@@ -137,24 +133,34 @@ def _capture(context, page) -> Optional[Session]:
         raise
 
 
-def _launch(p, profile_dir: Path, headless: bool, channel: Optional[str]):
-    profile_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-    profile_dir.chmod(0o700)
-    options = {"headless": headless}
-    if channel:
-        options["channel"] = channel
-    try:
-        return p.chromium.launch_persistent_context(str(profile_dir), **options)
-    except PlaywrightError:
-        if not channel:
-            raise
-        options.pop("channel")
-        return p.chromium.launch_persistent_context(str(profile_dir), **options)
+def _launch(p, profile_dir: Path, headless: bool, channel: Optional[str],
+            cdp_url: Optional[str] = None):
+    """Запускает собственный браузер или подключается к существующему через CDP."""
+    if cdp_url:
+        browser = p.chromium.connect_over_cdp(cdp_url)
+        context = browser.contexts[0] if browser.contexts else browser.new_context()
+        return context, browser
+    else:
+        profile_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        profile_dir.chmod(0o700)
+        options = {"headless": headless}
+        if channel:
+            options["channel"] = channel
+        try:
+            context = p.chromium.launch_persistent_context(str(profile_dir), **options)
+            return context, None
+        except PlaywrightError:
+            if not channel:
+                raise
+            options.pop("channel")
+            context = p.chromium.launch_persistent_context(str(profile_dir), **options)
+            return context, None
 
 
-def _capture_profile(profile_dir: Path, headless: bool, channel: Optional[str], timeout: float):
+def _capture_profile(profile_dir: Path, headless: bool, channel: Optional[str], timeout: float,
+                     cdp_url: Optional[str] = None):
     with sync_playwright() as p:
-        context = _launch(p, profile_dir, headless, channel)
+        context, browser = _launch(p, profile_dir, headless, channel, cdp_url=cdp_url)
         try:
             page = context.pages[0] if context.pages else context.new_page()
             try:
@@ -172,13 +178,16 @@ def _capture_profile(profile_dir: Path, headless: bool, channel: Optional[str], 
                 page.wait_for_timeout(1000)
             return None
         finally:
-            context.close()
+            if browser:
+                browser.close()
+            else:
+                context.close()
 
 
 def login(profile_dir: Path = DEFAULT_PROFILE_DIR, session_file: Path = DEFAULT_SESSION_FILE,
-          channel: Optional[str] = "chrome") -> Session:
+          channel: Optional[str] = "chrome", cdp_url: Optional[str] = None) -> Session:
     with _PROFILE_LOCK:
-        session = _capture_profile(profile_dir, False, channel, 1800)
+        session = _capture_profile(profile_dir, False, channel, 1800, cdp_url=cdp_url)
         if session is None or not session.usable:
             raise LoginRequired("Qwen Chat sign-in timed out without a valid session.")
         session.save(session_file)
@@ -186,10 +195,10 @@ def login(profile_dir: Path = DEFAULT_PROFILE_DIR, session_file: Path = DEFAULT_
 
 
 def keep_open(profile_dir: Path = DEFAULT_PROFILE_DIR, session_file: Path = DEFAULT_SESSION_FILE,
-              channel: Optional[str] = "chrome") -> None:
+              channel: Optional[str] = "chrome", cdp_url: Optional[str] = None) -> None:
     """Observe one foreground website window; only the website may renew auth."""
     with _PROFILE_LOCK, sync_playwright() as p:
-        context = _launch(p, profile_dir, False, channel)
+        context, browser = _launch(p, profile_dir, False, channel, cdp_url=cdp_url)
         closed = False
 
         def on_close(*_):
@@ -207,8 +216,6 @@ def keep_open(profile_dir: Path = DEFAULT_PROFILE_DIR, session_file: Path = DEFA
             while not closed and not page.is_closed():
                 session = _capture(context, page)
                 if session is not None and session.usable:
-                    # Ignore capture timestamps and cookie ordering, which can
-                    # change every poll without changing the usable session.
                     state = (session.token, session.expires_at, session.user_agent,
                              tuple(sorted(json.dumps(cookie, sort_keys=True) for cookie in session.cookies)))
                     if state != last_saved:
@@ -232,16 +239,20 @@ def keep_open(profile_dir: Path = DEFAULT_PROFILE_DIR, session_file: Path = DEFA
             else:
                 raise RuntimeError("Browser capture failed; stopped without retry.") from None
         finally:
-            try:
-                context.close()
-            except PlaywrightError:
-                pass  # A manually closed context needs no further cleanup.
+            if browser:
+                browser.close()
+            else:
+                try:
+                    context.close()
+                except PlaywrightError:
+                    pass
 
 
 def get_session(profile_dir: Path = DEFAULT_PROFILE_DIR, session_file: Path = DEFAULT_SESSION_FILE,
                 allow_interactive: bool = False, force: bool = False,
                 channel: Optional[str] = "chromium-headless-shell",
-                fallback_channel: Optional[str] = "chrome", allow_refresh: bool = False) -> Session:
+                fallback_channel: Optional[str] = "chrome", allow_refresh: bool = False,
+                cdp_url: Optional[str] = None) -> Session:
     with _PROFILE_LOCK:
         cached = Session.load(session_file)
         if not force and cached and cached.usable:
@@ -251,14 +262,14 @@ def get_session(profile_dir: Path = DEFAULT_PROFILE_DIR, session_file: Path = DE
         channels = list(dict.fromkeys([channel] + ([fallback_channel] if fallback_channel else [])))
         for browser_channel in channels:
             try:
-                session = _capture_profile(profile_dir, True, browser_channel, 30)
+                session = _capture_profile(profile_dir, True, browser_channel, 30, cdp_url=cdp_url)
             except (PlaywrightError, OSError, RuntimeError):
                 continue
             if session and session.usable:
                 session.save(session_file)
                 return session
         if allow_interactive:
-            return login(profile_dir, session_file)
+            return login(profile_dir, session_file, cdp_url=cdp_url)
         raise LoginRequired()
 
 
@@ -266,12 +277,14 @@ def main(argv=None) -> None:
     parser = argparse.ArgumentParser(description="Sign in to Qwen Chat in a visible website window.")
     parser.add_argument("--keep-open", action="store_true",
                         help="Keep the website open and save changed valid sessions until Ctrl+C or window close.")
+    parser.add_argument("--cdp-url", type=str, default=None,
+                        help="Подключиться к существующему Chromium через CDP (например, http://127.0.0.1:9222).")
     args = parser.parse_args(argv)
     try:
         if args.keep_open:
-            keep_open()
+            keep_open(cdp_url=args.cdp_url)
         else:
-            captured = login()
+            captured = login(cdp_url=args.cdp_url)
             print(f"[qwen-auth] Session saved ({len(captured.cookies)} cookies); sessions expire.", flush=True)
     except KeyboardInterrupt:
         print("[qwen-auth] Capture stopped by Ctrl+C.", flush=True)

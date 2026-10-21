@@ -18,7 +18,7 @@ services:
       - dsh-home:/home/node/.dsh
       # Рабочая директория на хосте (опционально, но удобно для доступа к файлам)
       - ./workspace:/workspace
-      - bridge-session:/bridge-session:ro   # ← только чтение
+      - bridge-session:/app/session:rw  # ← только чтение
     networks:
       - dsh-net
 
@@ -41,27 +41,27 @@ services:
       - dsh-net
     restart: unless-stopped
 
-  dsh-bridge-auth:
-    build:
-      context: ./bridge
-      dockerfile: Dockerfile.auth
-    container_name: dsh-bridge-auth
-    profiles: ["auth"]            # запускается только когда нужен вход
-    ports:
-      - "127.0.0.1:6081:6080"     # VNC
-    volumes:
-      - bridge-session:/app/session
-      - ./bridge/.env:/app/.env:ro
-    environment:
-      - DISPLAY=:99
-      - RESOLUTION=1280x800x24
-      - VNC_PASSWORD=password
-      - PYTHONUNBUFFERED=1  # <-- логи в реальном времени
-    networks:
-      - dsh-net
-    tty: false
-    stdin_open: false
-    # После завершения скрипта контейнер просто останавливается (exit 0)
+  # dsh-bridge-auth:
+  #   build:
+  #     context: ./bridge
+  #     dockerfile: Dockerfile.auth
+  #   container_name: dsh-bridge-auth
+  #   profiles: ["auth"]            # запускается только когда нужен вход
+  #   ports:
+  #     - "127.0.0.1:6081:6080"     # VNC
+  #   volumes:
+  #     - bridge-session:/app/session
+  #     - ./bridge/.env:/app/.env:ro
+  #   environment:
+  #     - DISPLAY=:99
+  #     - RESOLUTION=1280x800x24
+  #     - VNC_PASSWORD=password
+  #     - PYTHONUNBUFFERED=1  # <-- логи в реальном времени
+  #   networks:
+  #     - dsh-net
+  #   tty: false
+  #   stdin_open: false
+  #   # После завершения скрипта контейнер просто останавливается (exit 0)
 
 networks:
   dsh-net:
